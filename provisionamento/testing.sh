@@ -24,6 +24,7 @@ if [ $? -eq 1 ]; then
   sudo mkdir -p /root/.ssh/ && \
 	  sudo cp /tmp/devsecops.pem /root/.ssh/id_rsa && \
 	  sudo cp /tmp/devsecops.pub /root/.ssh/authorized_keys && \
+    sudo cat /tmp/windows.pub >> /root/.ssh/authorized_keys && \
 	  sudo chmod 600 /root/.ssh/id_rsa
   
   validateCommand "Preparando SSH KEY"
@@ -31,8 +32,49 @@ else
   echo "[OK] SSH KEY"
 fi
 
+# Verifica se o usuário devops já existe
+if ! getent passwd devops > /dev/null; then
+  echo "Criando usuário devops"
+  useradd -m -d /home/devops -s /bin/bash devops
+  
+  # Verifica se o diretório .ssh já existe
+  if [ ! -d /home/devops/.ssh ]; then
+    echo "Criando diretório .ssh para o usuário devops"
+    mkdir -p /home/devops/.ssh/
+    
+    # Copia as chaves autorizadas do root
+    echo "Copiando authorized_keys do root"
+    cp -Rp /root/.ssh/authorized_keys /home/devops/.ssh/
+    
+    # Ajusta as permissões
+    echo "Ajustando permissões"
+    chown -R devops: /home/devops/.ssh/
+    chmod 700 /home/devops/.ssh
+    chmod 600 /home/devops/.ssh/authorized_keys
+  else
+    echo "[OK] SSH KEY já existente"
+  fi
+  
+  # Verifica e adiciona o usuário devops ao sudoers
+  if [ ! -f /etc/sudoers.d/devops ]; then
+    echo "Adicionando o usuário devops ao sudoers"
+    echo "devops ALL=(ALL) NOPASSWD:ALL" | tee /etc/sudoers.d/devops
+  else
+    echo "[OK] Regra de sudo já existente"
+  fi
+else
+  echo "Usuário devops já existe"
+fi
+
+sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
+sed -i 's/mirrorlist/mirrorlist/g' /etc/yum.repos.d/CentOS-*
+sed -i 's|baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-*
+sudo yum update -y
+
+
 # Solução temporaria para EOL Centos 8
-sudo rpm -Uhv --nodeps http://mirror.centos.org/centos/8-stream/BaseOS/x86_64/os/Packages/centos-stream-repos-8-3.el8.noarch.rpm http://mirror.centos.org/centos/8-stream/BaseOS/x86_64/os/Packages/centos-gpg-keys-8-3.el8.noarch.rpm http://mirror.centos.org/centos/8-stream/BaseOS/x86_64/os/Packages/centos-stream-release-8.5-3.el8.noarch.rpm >/dev/null 2>>/var/log/vagrant_provision.log
+#sudo rpm -Uhv --nodeps http://mirror.centos.org/centos/8-stream/BaseOS/x86_64/os/Packages/centos-stream-repos-8-3.el8.noarch.rpm http://mirror.centos.org/centos/8-stream/BaseOS/x86_64/os/Packages/centos-gpg-keys-8-3.el8.noarch.rpm http://mirror.centos.org/centos/8-stream/BaseOS/x86_64/os/Packages/centos-stream-release-8.5-3.el8.noarch.rpm >/dev/null 2>>/var/log/vagrant_provision.log
 
 # Instalando Pacotes
 sudo dnf install -q -y ${DEPS_PACKAGES} ${PACKAGES} ${GUI_PACKAGES} >/dev/null 2>>/var/log/vagrant_provision.log
